@@ -205,8 +205,25 @@
                 <h2 class="section-title text-4xl font-bold text-center mb-12 text-gray-800">MD 추천 상품</h2>
                 <div class="featured-product grid md:grid-cols-2 gap-12 items-center">
                     <div class="product-showcase">
-                        <div id="canvas-container">
-                            <div id="loader">3D 가방 로딩 중...</div>
+                        <div class="carousel-container relative">
+                            <button id="prev-bag" class="carousel-btn absolute left-4 top-1/2 transform -translate-y-1/2 bg-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-100 transition-all z-10">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                </svg>
+                            </button>
+                            <div id="canvas-container">
+                                <div id="loader">3D 가방 로딩 중...</div>
+                            </div>
+                            <button id="next-bag" class="carousel-btn absolute right-4 top-1/2 transform -translate-y-1/2 bg-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-100 transition-all z-10">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                </svg>
+                            </button>
+                            <div class="carousel-indicators absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                                <span class="indicator w-2 h-2 bg-white rounded-full opacity-100 transition-opacity" data-bag="0"></span>
+                                <span class="indicator w-2 h-2 bg-white rounded-full opacity-50 transition-opacity" data-bag="1"></span>
+                                <span class="indicator w-2 h-2 bg-white rounded-full opacity-50 transition-opacity" data-bag="2"></span>
+                            </div>
                         </div>
                     </div>
                     <div class="product-info">
@@ -329,6 +346,14 @@
         const container = document.getElementById('canvas-container');
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
+        let currentBagIndex = 0;
+        
+        // 가방 모델 정보
+        const bagModels = [
+            { name: '프리미엄 가방', path: './assets/leatherbag.glb', price: '₩299,000', originalPrice: '₩399,000', description: '최고급 가죽으로 만든 프리미엄 가방입니다. 일상생활은 물론 비즈니스 상황에서도 완벽한 스타일을 연출할 수 있습니다.', defaultColor: '#8B4513' },
+            { name: '캐주얼 핸드백', path: './assets/casualhandbag.glb', price: '₩199,000', originalPrice: '₩259,000', description: '편안한 캐주얼 스타일의 핸드백입니다. 일상적인 외출에 완벽한 선택입니다.', defaultColor: '#FFB6C1' },
+            { name: '레드 핸드백', path: './assets/redhandbag.glb', price: '₩249,000', originalPrice: '₩329,000', description: '시간을 초월하는 레드 컬러의 핸드백입니다. 특별한 날에 어울리는 최상의 선택입니다.', defaultColor: '#DC143C' }
+        ];
 
         function initThree() {
             // Scene Setup
@@ -344,32 +369,42 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             container.appendChild(renderer.domElement);
 
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            // Balanced lighting setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
             directionalLight.position.set(5, 10, 7.5);
+            directionalLight.castShadow = true;
             scene.add(directionalLight);
 
-            const pointLight = new THREE.PointLight(0xffffff, 0.5);
-            pointLight.position.set(-5, -5, 5);
-            scene.add(pointLight);
+            const pointLight1 = new THREE.PointLight(0xffffff, 0.4);
+            pointLight1.position.set(-5, -5, 5);
+            scene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0xffffff, 0.3);
+            pointLight2.position.set(5, -5, -5);
+            scene.add(pointLight2);
+
+            const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.2);
+            hemisphereLight.position.set(0, 10, 0);
+            scene.add(hemisphereLight);
 
             // Create initial bag
-            createBagMesh('#8B4513');
+            loadBagModel(currentBagIndex, bagModels[currentBagIndex].defaultColor);
             
             animate();
         }
 
-        function createBagMesh(color) {
+        function loadBagModel(index, color) {
             if (bagMesh) scene.remove(bagMesh);
             
-            // Show loader during color change
+            // Show loader during model change
             document.getElementById('loader').style.display = 'block';
             document.getElementById('loader').textContent = '3D 가방 로딩 중...';
-
-            console.log('Starting GLB load process...');
+            
+            const bagInfo = bagModels[index];
+            console.log(`Loading bag model: ${bagInfo.name}`);
             
             // Check if GLTFLoader is available
             if (typeof THREE.GLTFLoader === 'undefined') {
@@ -378,83 +413,122 @@
                 createFallbackBag(color);
                 return;
             }
-
-            console.log('GLTFLoader is available, creating loader...');
+            
             const loader = new THREE.GLTFLoader();
             
-            // Try different file paths
-            const possiblePaths = [
-                './assets/leatherbag.glb',
-                'assets/leatherbag.glb',
-                '/assets/leatherbag.glb',
-                './assets/handbag.glb',
-                'assets/handbag.glb'
-            ];
-            
-            let pathIndex = 0;
-            
-            function tryLoadNextPath() {
-                if (pathIndex >= possiblePaths.length) {
-                    console.error('All paths failed, using fallback');
-                    document.getElementById('loader').textContent = '모든 경로 실패 - 폴백 모델 사용';
-                    createFallbackBag(color);
-                    return;
-                }
-                
-                const currentPath = possiblePaths[pathIndex];
-                console.log(`Trying to load from path: ${currentPath}`);
-                
-                loader.load(
-                    currentPath,
-                    function(gltf) {
-                        console.log('GLB loaded successfully!', gltf);
-                        console.log('Scene:', gltf.scene);
-                        console.log('Scene children count:', gltf.scene.children.length);
-                        
-                        bagMesh = gltf.scene;
-                        
-                        // Scale and position the model
-                        bagMesh.scale.set(2.5, 2.5, 2.5);
-                        bagMesh.position.set(0, 0, 0);
-                        
-                        // Log mesh details
-                        let meshCount = 0;
-                        bagMesh.traverse(function(child) {
-                            if (child.isMesh) {
-                                meshCount++;
-                                console.log(`Mesh ${meshCount}:`, child.name || 'unnamed', child.geometry.type);
-                                console.log('Material:', child.material);
+            loader.load(
+                bagInfo.path,
+                function(gltf) {
+                    console.log('GLB loaded successfully!', gltf);
+                    console.log('Scene:', gltf.scene);
+                    console.log('Scene children count:', gltf.scene.children.length);
+                    
+                    bagMesh = gltf.scene;
+                    
+                    // Scale and position the model
+                    bagMesh.scale.set(2.5, 2.5, 2.5);
+                    bagMesh.position.set(0, 0, 0);
+                    
+                    // Set initial rotation to face forward
+                    bagMesh.rotation.set(0, -Math.PI/2, 0);
+                    
+                    // Log mesh details
+                    let meshCount = 0;
+                    bagMesh.traverse(function(child) {
+                        if (child.isMesh) {
+                            meshCount++;
+                            console.log(`Mesh ${meshCount}:`, child.name || 'unnamed', child.geometry.type);
+                            console.log('Original material:', child.material);
+                            
+                            // Check if this is a metal decoration for handbag
+                            const isHandbag = bagInfo.path.includes('redhandbag.glb');
+                            let isMetalDecoration = false;
+                            
+                            if (isHandbag) {
+                                // Check mesh name for metal-related keywords
+                                const meshName = (child.name || '').toLowerCase();
+                                const metalKeywords = [
+                                    'metal', 'buckle', 'zip', 'hardware', 'clasp', 'lock', 'chain',
+                                    'stitch', 'decor', 'accent', 'trim', 'ring', 'stud', 'grommet',
+                                    '금속', '버클', '지퍼', '장식', '액센트'
+                                ];
                                 
-                                // Apply color to all meshes in the model
+                                isMetalDecoration = metalKeywords.some(keyword => meshName.includes(keyword));
+                                
+                                // Also check if original material has metallic properties
+                                if (!isMetalDecoration && child.material) {
+                                    const originalMetalness = child.material.metalness || 0;
+                                    const originalRoughness = child.material.roughness || 1;
+                                    // If original material is already metallic, preserve it
+                                    if (originalMetalness > 0.5) {
+                                        isMetalDecoration = true;
+                                        console.log('Detected metal by material properties:', child.name);
+                                    }
+                                }
+                                
+                                // For handbag, also check by geometry type (small decorative parts)
+                                if (!isMetalDecoration) {
+                                    const geometryType = child.geometry.type;
+                                    if (geometryType === 'TorusGeometry' || geometryType === 'RingGeometry' || 
+                                        geometryType === 'CylinderGeometry' || geometryType === 'SphereGeometry') {
+                                        // Check if it's a small decorative part
+                                        const box = new THREE.Box3().setFromObject(child);
+                                        const size = box.getSize(new THREE.Vector3());
+                                        if (size.x < 0.5 && size.y < 0.5 && size.z < 0.5) {
+                                            isMetalDecoration = true;
+                                            console.log('Detected metal by small geometry:', child.name, size);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (isMetalDecoration) {
+                                // Apply metal material for decorations
+                                child.material = new THREE.MeshStandardMaterial({
+                                    color: 0xC0C0C0, // Silver color
+                                    roughness: 0.1,
+                                    metalness: 0.9,
+                                    envMapIntensity: 1.0
+                                });
+                                console.log('Applied metal material to:', child.name);
+                            } else {
+                                // Apply regular material for bag body with enhanced lighting
+                                const isRedHandbag = bagInfo.path.includes('redhandbag.glb');
                                 child.material = new THREE.MeshStandardMaterial({
                                     color: color,
-                                    roughness: 0.4,
-                                    metalness: 0.1
+                                    roughness: isRedHandbag ? 0.3 : 0.4, // Less roughness for red handbag
+                                    metalness: isRedHandbag ? 0.2 : 0.1, // Slightly more metallic for red handbag
+                                    envMapIntensity: isRedHandbag ? 0.8 : 0.5 // Better environment reflection
                                 });
+                                console.log('Applied enhanced material to:', child.name);
                             }
-                        });
-                        
-                        console.log(`Total meshes found: ${meshCount}`);
-                        
-                        scene.add(bagMesh);
-                        document.getElementById('loader').style.display = 'none';
-                    },
-                    function(progress) {
-                        if (progress.lengthComputable) {
-                            const percentComplete = progress.loaded / progress.total * 100;
-                            console.log(`Loading progress from ${currentPath}:`, percentComplete.toFixed(2) + '%');
-                            document.getElementById('loader').textContent = `로딩 중... ${percentComplete.toFixed(0)}%`;
                         }
-                    },
-                    function(error) {
-                        console.error(`Error loading GLB from ${currentPath}:`, error);
-                        pathIndex++;
-                        tryLoadNextPath();
+                    });
+                    
+                    console.log(`Total meshes found: ${meshCount}`);
+                    
+                    scene.add(bagMesh);
+                    document.getElementById('loader').style.display = 'none';
+                    
+                    // Update product info
+                    updateProductInfo(index);
+                    updateIndicators(index);
+                },
+                function(progress) {
+                    if (progress.lengthComputable) {
+                        const percentComplete = progress.loaded / progress.total * 100;
+                        console.log(`Loading progress:`, percentComplete.toFixed(2) + '%');
+                        document.getElementById('loader').textContent = `로딩 중... ${percentComplete.toFixed(0)}%`;
                     }
-                );
-            }
-            
-            tryLoadNextPath();
+                },
+                function(error) {
+                    console.error(`Error loading GLB from ${bagInfo.path}:`, error);
+                    document.getElementById('loader').textContent = '모델 로딩 실패 - 폴백 모델 사용';
+                    createFallbackBag(color);
+                    updateProductInfo(index);
+                    updateIndicators(index);
+                }
+            );
         }
 
         function createFallbackBag(color) {
@@ -486,6 +560,7 @@
             bagGroup.add(handle);
 
             bagMesh = bagGroup;
+            bagMesh.rotation.set(0, -Math.PI/2, 0); // Set initial rotation to face forward
             scene.add(bagMesh);
             document.getElementById('loader').style.display = 'none';
         }
@@ -496,7 +571,7 @@
                 document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
                 const color = this.dataset.color;
-                createBagMesh(color);
+                loadBagModel(currentBagIndex, color);
             });
         });
 
@@ -552,9 +627,7 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            if (!isDragging && bagMesh) {
-                bagMesh.rotation.y += 0.003;
-            }
+            // 자동 회전 제거 - 마우스 컨트롤만 가능
             
             renderer.render(scene, camera);
         }
@@ -578,9 +651,69 @@
             slider.scrollLeft += 300;
         });
 
+        // 캐러셀 네비게이션 기능
+        function updateProductInfo(index) {
+            const bagInfo = bagModels[index];
+            document.querySelector('.product-name').textContent = bagInfo.name;
+            document.querySelector('.product-description').textContent = bagInfo.description;
+            document.querySelector('.current-price').textContent = bagInfo.price;
+            document.querySelector('.original-price').textContent = bagInfo.originalPrice;
+        }
+
+        function updateIndicators(index) {
+            document.querySelectorAll('.indicator').forEach((indicator, i) => {
+                if (i === index) {
+                    indicator.classList.remove('opacity-50');
+                    indicator.classList.add('opacity-100');
+                } else {
+                    indicator.classList.remove('opacity-100');
+                    indicator.classList.add('opacity-50');
+                }
+            });
+        }
+
+        function nextBag() {
+            currentBagIndex = (currentBagIndex + 1) % bagModels.length;
+            const bagInfo = bagModels[currentBagIndex];
+            loadBagModel(currentBagIndex, bagInfo.defaultColor);
+            updateColorButtons(bagInfo.defaultColor);
+        }
+
+        function prevBag() {
+            currentBagIndex = (currentBagIndex - 1 + bagModels.length) % bagModels.length;
+            const bagInfo = bagModels[currentBagIndex];
+            loadBagModel(currentBagIndex, bagInfo.defaultColor);
+            updateColorButtons(bagInfo.defaultColor);
+        }
+
+        // 캐러셀 버튼 이벤트 리스너
+        document.getElementById('next-bag').addEventListener('click', nextBag);
+        document.getElementById('prev-bag').addEventListener('click', prevBag);
+
+        // 인디케이터 클릭 이벤트
+        document.querySelectorAll('.indicator').forEach((indicator, index) => {
+            indicator.addEventListener('click', function() {
+                currentBagIndex = index;
+                const bagInfo = bagModels[currentBagIndex];
+                loadBagModel(currentBagIndex, bagInfo.defaultColor);
+                updateColorButtons(bagInfo.defaultColor);
+            });
+        });
+        
+        // 색상 버튼 업데이트 함수
+        function updateColorButtons(defaultColor) {
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.color === defaultColor) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
         // Add to cart functionality
         document.querySelector('.add-to-cart-btn').addEventListener('click', function() {
             const selectedColor = document.querySelector('.color-btn.active').dataset.color;
+            const bagInfo = bagModels[currentBagIndex];
             const colorName = {
                 '#8B4513': '브라운',
                 '#000000': '블랙',
@@ -589,12 +722,21 @@
                 '#4ECDC4': '티얼'
             }[selectedColor];
             
-            alert(`프리미엄 가방 (${colorName})이 장바구니에 추가되었습니다.`);
+            alert(`${bagInfo.name} (${colorName})이 장바구니에 추가되었습니다.`);
         });
 
         // More button functionality
         document.querySelector('.more-btn').addEventListener('click', function() {
             alert('더 많은 인기상품을 준비 중입니다.');
+        });
+
+        // 키보드 네비게이션 지원
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowLeft') {
+                prevBag();
+            } else if (e.key === 'ArrowRight') {
+                nextBag();
+            }
         });
 
         window.onload = initThree;
