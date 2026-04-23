@@ -6,6 +6,7 @@
     <title>가방 쇼핑몰 - Bag Store</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
         
@@ -22,7 +23,7 @@
             height: 500px;
             position: relative;
             cursor: grab;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #e5e7eb;
             border-radius: 20px;
             overflow: hidden;
         }
@@ -358,15 +359,108 @@
             // Create initial bag
             createBagMesh('#8B4513');
             
-            document.getElementById('loader').style.display = 'none';
-            
             animate();
         }
 
         function createBagMesh(color) {
             if (bagMesh) scene.remove(bagMesh);
+            
+            // Show loader during color change
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('loader').textContent = '3D 가방 로딩 중...';
 
-            // Create bag shape using multiple geometries
+            console.log('Starting GLB load process...');
+            
+            // Check if GLTFLoader is available
+            if (typeof THREE.GLTFLoader === 'undefined') {
+                console.error('GLTFLoader not loaded');
+                document.getElementById('loader').textContent = '로더 로딩 실패';
+                createFallbackBag(color);
+                return;
+            }
+
+            console.log('GLTFLoader is available, creating loader...');
+            const loader = new THREE.GLTFLoader();
+            
+            // Try different file paths
+            const possiblePaths = [
+                './assets/leatherbag.glb',
+                'assets/leatherbag.glb',
+                '/assets/leatherbag.glb',
+                './assets/handbag.glb',
+                'assets/handbag.glb'
+            ];
+            
+            let pathIndex = 0;
+            
+            function tryLoadNextPath() {
+                if (pathIndex >= possiblePaths.length) {
+                    console.error('All paths failed, using fallback');
+                    document.getElementById('loader').textContent = '모든 경로 실패 - 폴백 모델 사용';
+                    createFallbackBag(color);
+                    return;
+                }
+                
+                const currentPath = possiblePaths[pathIndex];
+                console.log(`Trying to load from path: ${currentPath}`);
+                
+                loader.load(
+                    currentPath,
+                    function(gltf) {
+                        console.log('GLB loaded successfully!', gltf);
+                        console.log('Scene:', gltf.scene);
+                        console.log('Scene children count:', gltf.scene.children.length);
+                        
+                        bagMesh = gltf.scene;
+                        
+                        // Scale and position the model
+                        bagMesh.scale.set(2.5, 2.5, 2.5);
+                        bagMesh.position.set(0, 0, 0);
+                        
+                        // Log mesh details
+                        let meshCount = 0;
+                        bagMesh.traverse(function(child) {
+                            if (child.isMesh) {
+                                meshCount++;
+                                console.log(`Mesh ${meshCount}:`, child.name || 'unnamed', child.geometry.type);
+                                console.log('Material:', child.material);
+                                
+                                // Apply color to all meshes in the model
+                                child.material = new THREE.MeshStandardMaterial({
+                                    color: color,
+                                    roughness: 0.4,
+                                    metalness: 0.1
+                                });
+                            }
+                        });
+                        
+                        console.log(`Total meshes found: ${meshCount}`);
+                        
+                        scene.add(bagMesh);
+                        document.getElementById('loader').style.display = 'none';
+                    },
+                    function(progress) {
+                        if (progress.lengthComputable) {
+                            const percentComplete = progress.loaded / progress.total * 100;
+                            console.log(`Loading progress from ${currentPath}:`, percentComplete.toFixed(2) + '%');
+                            document.getElementById('loader').textContent = `로딩 중... ${percentComplete.toFixed(0)}%`;
+                        }
+                    },
+                    function(error) {
+                        console.error(`Error loading GLB from ${currentPath}:`, error);
+                        pathIndex++;
+                        tryLoadNextPath();
+                    }
+                );
+            }
+            
+            tryLoadNextPath();
+        }
+
+        function createFallbackBag(color) {
+            console.log('Creating fallback bag model');
+            
+            // Create simple bag shape as fallback
             const bagGroup = new THREE.Group();
 
             // Main bag body
@@ -391,19 +485,9 @@
             handle.rotation.x = Math.PI / 2;
             bagGroup.add(handle);
 
-            // Bag flap
-            const flapGeometry = new THREE.BoxGeometry(2.1, 0.8, 1.1);
-            const flapMaterial = new THREE.MeshStandardMaterial({ 
-                color: color, 
-                roughness: 0.3, 
-                metalness: 0.1 
-            });
-            const flap = new THREE.Mesh(flapGeometry, flapMaterial);
-            flap.position.y = 1.3;
-            bagGroup.add(flap);
-
             bagMesh = bagGroup;
             scene.add(bagMesh);
+            document.getElementById('loader').style.display = 'none';
         }
 
         // Color change functionality
@@ -417,8 +501,14 @@
         });
 
         // Mouse interaction
-        container.addEventListener('mousedown', e => { isDragging = true; });
-        window.addEventListener('mouseup', e => { isDragging = false; });
+        container.addEventListener('mousedown', e => { 
+            isDragging = true; 
+            container.style.cursor = 'grabbing';
+        });
+        window.addEventListener('mouseup', e => { 
+            isDragging = false; 
+            container.style.cursor = 'grab';
+        });
         window.addEventListener('mousemove', e => {
             if (isDragging && bagMesh) {
                 const deltaMove = {
@@ -426,8 +516,12 @@
                     y: e.offsetY - previousMousePosition.y
                 };
 
-                bagMesh.rotation.y += deltaMove.x * 0.01;
-                bagMesh.rotation.x += deltaMove.y * 0.01;
+                // Adjust rotation sensitivity for GLB model
+                bagMesh.rotation.y += deltaMove.x * 0.008;
+                bagMesh.rotation.x += deltaMove.y * 0.008;
+                
+                // Limit rotation angles for better user experience
+                bagMesh.rotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, bagMesh.rotation.x));
             }
             previousMousePosition = { x: e.offsetX, y: e.offsetY };
         });
@@ -446,8 +540,11 @@
                     x: e.touches[0].clientX - previousMousePosition.x,
                     y: e.touches[0].clientY - previousMousePosition.y
                 };
-                bagMesh.rotation.y += deltaMove.x * 0.01;
-                bagMesh.rotation.x += deltaMove.y * 0.01;
+                bagMesh.rotation.y += deltaMove.x * 0.008;
+                bagMesh.rotation.x += deltaMove.y * 0.008;
+                
+                // Limit rotation angles
+                bagMesh.rotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, bagMesh.rotation.x));
             }
             previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         }, {passive: true});
